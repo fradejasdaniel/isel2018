@@ -76,12 +76,7 @@ void inter2(void* ignore){
 
 int armed (fsm_t *this) {
   GPIO_OUTPUT_SET(10,1); //armo aqui la alarma pero podría hacerlo mediante una entrada externa
-  if(GPIO_PIN_REG_10 == 1){
-      return 1;
-  }
-  else{
-    return 0;
-  }
+  return 1;
 }
 void led_on (fsm_t *this) {
    GPIO_OUTPUT_SET(2, 0);
