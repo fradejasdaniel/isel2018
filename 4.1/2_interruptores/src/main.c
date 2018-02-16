@@ -4,7 +4,7 @@
 #include "fsm.h"
 
 #define PERIOD_TICK 100/portTICK_RATE_MS
-#define REBOUND_TICK 180/portTICK_RATE_MS
+#define REBOUND_TICK 50/portTICK_RATE_MS
 
 #define ETS_GPIO_INTR_ENABLE() \
 _xt_isr_unmask(1 << ETS_GPIO_INUM)
