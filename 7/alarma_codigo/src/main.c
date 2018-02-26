@@ -3,9 +3,8 @@
 #include "gpio.h"
 #include "fsm.h"
 
-#define PERIOD_TICK 200/portTICK_RATE_MS
-#define REBOUND_TICK 50/portTICK_RATE_MS
-#define timer 10000/portTICK_RATE_MS
+#define PERIOD_TICK 100/portTICK_RATE_MS
+#define REBOUND_TICK 200/portTICK_RATE_MS
 
 #define ETS_GPIO_INTR_ENABLE() \
 _xt_isr_unmask(1 << ETS_GPIO_INUM)
@@ -16,13 +15,14 @@ _xt_isr_mask(1 << ETS_GPIO_INUM)
 int armed (fsm_t* );
 void led_on (fsm_t* );
 void led_off (fsm_t*);
+void clean_flags(fsm_t* );
 int presence(fsm_t*);
 int disarm1(fsm_t*);
 int disarm2(fsm_t*);
 int disarm3(fsm_t*);
 int timeout(fsm_t*);
 //void isr_gpio(void* );
-
+volatile int done0 = 0, done1 = 0, tim = 0;
 
 enum fsm_state{ //inicializa el número y los nombres de los estados
   DISARMED,
@@ -34,48 +34,50 @@ enum fsm_state{ //inicializa el número y los nombres de los estados
 static fsm_trans_t interruptor[] = { //inicaliza los estados, input, siguiente estado, output
  { DISARMED, armed, ARMED, NULL},
  { ARMED, presence, ARMED, led_on},
- { ARMED, disarm1, T1, NULL},
- { T1, disarm2, T2, NULL},
- { T1, timeout, ARMED, NULL},
+ { ARMED, disarm1, T1, clean_flags},
+ { T1, disarm2, T2, clean_flags},
+ { T1, timeout, ARMED, clean_flags},
  { T2, disarm3, DISARMED, led_off},
- { T2, timeout, ARMED, NULL},
+ { T2, timeout, ARMED, clean_flags},
  {-1, NULL, -1, NULL },
 };
 
+//RUTINA DE ATENCIÓN
+
 void isr_gpio(void* arg) {
- static portTickType xLastISRTick0 = 0;
+ static portTickType xLastISRTick0 = 0, xLastISRTick15 = 0;
  uint32 status = GPIO_REG_READ(GPIO_STATUS_ADDRESS);
  portTickType now = xTaskGetTickCount ();
- if (status & (BIT(0)||BIT(15))) {
+ if (status & BIT(0)) { //un unico & se hace la comparación bit a bit (&& es el total)
    if (now > xLastISRTick0) {
      xLastISRTick0 = now + REBOUND_TICK;
-     int done0 = 1;
+     done0 = 1;
     }
   }
+  if (status & BIT(15)) { //un unico & se hace la comparación bit a bit (&& es el total)
+    if (now > xLastISRTick15) {
+      xLastISRTick15 = now + REBOUND_TICK;
+      done1 = 1;
+     }
+   }
   GPIO_REG_WRITE(GPIO_STATUS_W1TC_ADDRESS, status);
 }
-void inter2(void* ignore){
-  GPIO_ConfigTypeDef io_conf, i15_conf;
-  io_conf.GPIO_IntrType = GPIO_PIN_INTR_NEGEDGE;
-  io_conf.GPIO_Mode = GPIO_Mode_Input;
-  io_conf.GPIO_Pin = BIT(0);
-  io_conf.GPIO_Pullup = GPIO_PullUp_EN;
-  gpio_config(&io_conf);
-  i15_conf.GPIO_IntrType = GPIO_PIN_INTR_POSEDGE;
-  i15_conf.GPIO_Mode = GPIO_Mode_Input;
-  i15_conf.GPIO_Pin = BIT(15);
-  i15_conf.GPIO_Pullup = GPIO_PullUp_EN;
-  gpio_config(&i15_conf);
 
+//PSEUDOMAIN
+
+void inter2(void* ignore){
  fsm_t* fsm = fsm_new(interruptor); //estados
  led_off(fsm); //inicial
  portTickType xLastWakeTime; //inicializa
  //Interrupt configuration before while(1)
- gpio_intr_handler_register((void*)isr_gpio, NULL);
- gpio_pin_intr_state_set(0, GPIO_PIN_INTR_NEGEDGE);
+
+ PIN_FUNC_SELECT(GPIO_PIN_REG_15, FUNC_GPIO15); //necesario para usar el pin 15
+
+ gpio_intr_handler_register((void*)isr_gpio, NULL); //registo interrupcion
+ gpio_pin_intr_state_set(0, GPIO_PIN_INTR_NEGEDGE); //causas por las que quiero que salte la interrupcion
  gpio_pin_intr_state_set(15, GPIO_PIN_INTR_POSEDGE);
  // Other val: DISABLE, ANYEDGE, LOLEVEL, HILEVEL
- ETS_GPIO_INTR_ENABLE();
+ ETS_GPIO_INTR_ENABLE(); //la habilito las interrupciones
   while(true) {
       xLastWakeTime = xTaskGetTickCount();
       fsm_fire(fsm); //lanza el siguiente estado y las salidas si las tuviese
@@ -83,42 +85,57 @@ void inter2(void* ignore){
     }
   }
 
-int armed (fsm_t *this) {
+int armed (fsm_t *fsm) {
+  tim=0;
+  done0=0;
+  done1=0;
   GPIO_OUTPUT_SET(10,1); //armo aqui la alarma pero podría hacerlo mediante una entrada externa
   return 1;
 }
-void led_on (fsm_t *this) {
-   GPIO_OUTPUT_SET(2, 0);
+void led_on (fsm_t *fsm) {
+  tim=0;
+  done0=0;
+  done1=0;
+  GPIO_OUTPUT_SET(2, 0);
 }
 
-int disarm1(fsm_t *this){
-  return GPIO_INPUT_GET(15);
+void clean_flags(fsm_t *fsm){
+  tim=0;
+  done0=0;
+  done1=0;
 }
 
-int disarm2(fsm_t *this){
-    return GPIO_INPUT_GET(15);
+int disarm1(fsm_t *fsm){
+  return done1;
 }
 
-int disarm3(fsm_t *this){
-    if(GPIO_INPUT_GET(15)){
-        GPIO_OUTPUT_SET(10,0);
-        return 1;
-      }
-    else{
-      return 0;
-    }
+int disarm2(fsm_t *fsm){
+  return done1;
 }
 
-int timeout(fsm_t *this){
-  return 0;
+int disarm3(fsm_t *fsm){
+  return done1;
+}
+
+int timeout(fsm_t *fsm){
+  tim++;
+  if(tim > 10){
+    return 1;
+  }
+  else{
+    return 0;
+  }
 
 }
-void led_off (fsm_t *this) {
+void led_off (fsm_t *fsm) {
+  tim=0;
+  done0=0;
+  done1=0;
    GPIO_OUTPUT_SET(2, 1);
 }
 
-int presence(fsm_t *this){
-  return !GPIO_INPUT_GET(0);
+int presence(fsm_t *fsm){
+  return done0;
 
 }
 uint32 user_rf_cal_sector_set(void)
