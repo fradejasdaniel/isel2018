@@ -49,7 +49,7 @@ static fsm_trans_t interruptor[] = { //inicaliza los estados, input, siguiente e
 //RUTINAS DE COMPROBACIÓN
 int codigo_correcto(fsm_t* fsm){
     if(in>2){
-      if((code_inserted[0]==right_code[0])||(code_inserted[1]==right_code[1])||(code_inserted[2]==right_code[2])){
+      if((code_inserted[0]==right_code[0])&&(code_inserted[1]==right_code[1])&&(code_inserted[2]==right_code[2])){
         return 1;
       }
       else{return 0;}
