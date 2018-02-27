@@ -38,7 +38,7 @@ static fsm_trans_t interruptor[] = { //inicaliza los estados, input, siguiente e
  {DISARMED, mirar_flag_valido, DISARMED, aumenta_digito},
  {DISARMED, timeout_valid, DISARMED, siguiente_digito},
  {DISARMED, codigo_incorrecto, DISARMED, limpiar_flag},
- {ARMED, codigo_correcto, DISARMED, led_off},
+ {ARMED, codigo_correcto, DISARMED, limpiar_flag},
  {ARMED, mirar_flag_valido, ARMED, aumenta_digito},
  {ARMED, timeout_valid, ARMED, siguiente_digito},
  {ARMED, codigo_incorrecto, ARMED, limpiar_flag},
@@ -96,9 +96,13 @@ void limpiar_flag(fsm_t* fsm){
   for(i=0;i<3;i++){
     code_inserted[i] = 0;
   }
-  GPIO_OUTPUT_SET(2,1);
   in = 0;
   presence = 0;
+  nextTimeout = 0xFFFFFFFF;
+  GPIO_OUTPUT_SET(2,0);
+  portTickType var = xTaskGetTickCount();
+  vTaskDelayUntil(&var, 10/portTICK_RATE_MS);
+  GPIO_OUTPUT_SET(2,1);
 }
 //////////////////////////////////////////////////////////////////////////////
 void aumenta_digito(fsm_t* fsm){
@@ -106,9 +110,6 @@ void aumenta_digito(fsm_t* fsm){
   pressed = 0;
   nextTimeout = xTaskGetTickCount() + TIMER;
   portTickType xLastWakeTime = xTaskGetTickCount();
-  GPIO_OUTPUT_SET(2, 0);
-  vTaskDelayUntil(&xLastWakeTime, 10);
-  GPIO_OUTPUT_SET(2,1);
 }
 //////////////////////////////////////////////////////////////////////////////
 void siguiente_digito(fsm_t* fsm){
