@@ -64,8 +64,8 @@ void inter2(void* ignore){
  // Other val: DISABLE, ANYEDGE, LOLEVEL, HILEVEL
  ETS_GPIO_INTR_ENABLE();
   while(true) {
-      xLastWakeTime = xTaskGetTickCount();
       fsm_fire(fsm); //lanza el siguiente estado y las salidas si las tuviese
+      xLastWakeTime = xTaskGetTickCount();
       vTaskDelayUntil(&xLastWakeTime, PERIOD_TICK); //espera un tiempo para ahorrar
     }
   }
